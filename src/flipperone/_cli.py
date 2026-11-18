@@ -30,6 +30,7 @@ _PROMPT_TAIL = re.compile(r"\n?[^\n]*>: $")
 _NOT_FOUND = re.compile(r"could not find command `([^`]*)`")
 
 wire = logging.getLogger("flipperone.wire")
+log = logging.getLogger("flipperone.cli")      # DEBUG: one line per command (the device, the command, time, size)
 
 Connect = Callable[[], Stream]
 
@@ -163,9 +164,15 @@ class CliDevice:
 
     def run(self, line: str, timeout: float | None = None) -> Result:
         """Run one command line and return its reply once the prompt is back."""
+        started = self._clock()
         self._send(line)
-        raw = self._read_until(PROMPT, timeout or self.timeout_s, f"the prompt after '{line}'")
+        try:
+            raw = self._read_until(PROMPT, timeout or self.timeout_s, f"the prompt after '{line}'")
+        except Exception as e:
+            log.debug("%s: %s -> %s: %s", type(self).__name__, line, type(e).__name__, e)
+            raise
         text = clean(raw, line)
+        log.debug("%s: %s -> %.2f s, %d B", type(self).__name__, line, self._clock() - started, len(text))
         m = _NOT_FOUND.search(text)
         if m:
             raise CommandNotFound(f"{self.name}: could not find command `{m.group(1)}`")
@@ -177,7 +184,9 @@ class CliDevice:
         raw = self._read_for(seconds)
         self._write(ETX)
         raw += self._read_until(PROMPT, self.timeout_s, f"the prompt after stopping '{line}'")
-        return Result(line, raw, clean(raw, line))
+        text = clean(raw, line)
+        log.debug("%s: %s (for %g s) -> %d B", type(self).__name__, line, seconds, len(text))
+        return Result(line, raw, text)
 
     def watch(self, line: str, handler: Callable[[str], bool], timeout: float) -> bool:
         """Run a command that keeps printing and give each line to ``handler`` as it arrives, until the handler
@@ -198,6 +207,8 @@ class CliDevice:
                     break
         self._write(ETX)
         self._read_until(PROMPT, self.timeout_s, f"the prompt after stopping '{line}'")
+        log.debug("%s: %s (watched, %g s at most) -> %s", type(self).__name__, line, timeout,
+                  "the handler stopped it" if done else "timed out")
         return done
 
     @contextmanager
