@@ -25,8 +25,9 @@ The subsystem classes take any transport: `Mcu(stream)` runs over a serial port,
 
 Nothing is printed. At DEBUG the library logs every action in one line, never its output: `flipperone.linux`
 (commands, file reads, streams, copies: exit code, time, sizes) and `flipperone.cli` (MCU and probe commands: time,
-reply size). `flipperone.wire` logs the bytes themselves at DEBUG: silence it on its own when only the actions are
-wanted (`logging.getLogger("flipperone.wire").setLevel(logging.WARNING)`).
+reply size); `flipperone.linux.output` and `flipperone.cli.output` add each command's output after its line (up to
+`log_output_limit` bytes per stream, 64 KiB by default). `flipperone.wire` logs the bytes themselves at DEBUG: silence
+it, or the output loggers, on its own (`logging.getLogger("flipperone.wire").setLevel(logging.WARNING)`).
 
 ## Documentation
 

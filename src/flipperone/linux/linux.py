@@ -8,9 +8,12 @@ import shlex
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
+from .._output import DEFAULT_LIMIT
+from .._output import record as output_record
 from ..transport.base import CommandResult, Shell, Stream
 
 log = logging.getLogger("flipperone.linux")    # DEBUG: one line per action (what, exit code, time, sizes), no output
+output_log = logging.getLogger("flipperone.linux.output")   # DEBUG: each command's stdout and stderr, after its line
 
 MARK = "===FLIPPERONE:"    # separates files in a read_many reply; not something sysfs content holds
 
@@ -20,11 +23,13 @@ class Linux:
 
     ``shell``: an :class:`~flipperone.transport.ssh.SshShell` (see :func:`flipperone.connect.linux_over_ssh`) or any
     other :class:`~flipperone.transport.base.Shell`. ``command_timeout_s``: the default for :meth:`run`.
+    ``log_output_limit``: bytes of a command's stdout (and of its stderr) the ``flipperone.linux.output`` logger keeps.
     """
 
-    def __init__(self, shell: Shell, *, command_timeout_s: float = 20.0):
+    def __init__(self, shell: Shell, *, command_timeout_s: float = 20.0, log_output_limit: int = DEFAULT_LIMIT):
         self.shell = shell
         self.command_timeout_s = command_timeout_s
+        self.log_output_limit = log_output_limit
 
     def run(self, command: str, *, timeout: float | None = None, check: bool = False,
             on_line: Callable[[str], None] | None = None) -> CommandResult:
@@ -47,6 +52,10 @@ class Linux:
             raise
         log.debug("%s -> exit %d, %.2f s, out %d B%s", label, result.code, result.duration_s, len(result.out),
                   f", err {len(result.err)} B" if result.err else "")
+        if output_log.isEnabledFor(logging.DEBUG):
+            text = output_record(label, result.out, result.err, self.log_output_limit)
+            if text:
+                output_log.debug("%s", text)
         return result.check() if check else result
 
     def open_stream(self, command: str, *, sudo: bool = False) -> Stream:

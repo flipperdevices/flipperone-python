@@ -17,6 +17,8 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+from ._output import DEFAULT_LIMIT
+from ._output import record as output_record
 from .errors import CliError, CommandNotFound, FlipperOneError, PortNotFound, SyncTimeout, UsageError
 from .transport.base import Stream
 
@@ -31,6 +33,7 @@ _NOT_FOUND = re.compile(r"could not find command `([^`]*)`")
 
 wire = logging.getLogger("flipperone.wire")
 log = logging.getLogger("flipperone.cli")      # DEBUG: one line per command (the device, the command, time, size)
+output_log = logging.getLogger("flipperone.cli.output")    # DEBUG: each command's reply, after its line
 
 Connect = Callable[[], Stream]
 
@@ -94,8 +97,10 @@ class CliDevice:
 
     def __init__(self, connect: Stream | Connect, *, timeout_s: float = 2.0, sync_timeout_s: float = 3.0,
                  settle_s: float = 0.3, reconnect_timeout_s: float = 20.0,
-                 sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic):
+                 sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic,
+                 log_output_limit: int = DEFAULT_LIMIT):
         self.timeout_s = timeout_s
+        self.log_output_limit = log_output_limit     # bytes of a reply the flipperone.cli.output logger keeps
         self.sync_timeout_s = sync_timeout_s
         self.settle_s = settle_s
         self.reconnect_timeout_s = reconnect_timeout_s
@@ -173,6 +178,7 @@ class CliDevice:
             raise
         text = clean(raw, line)
         log.debug("%s: %s -> %.2f s, %d B", type(self).__name__, line, self._clock() - started, len(text))
+        self._log_reply(line, text)
         m = _NOT_FOUND.search(text)
         if m:
             raise CommandNotFound(f"{self.name}: could not find command `{m.group(1)}`")
@@ -186,7 +192,14 @@ class CliDevice:
         raw += self._read_until(PROMPT, self.timeout_s, f"the prompt after stopping '{line}'")
         text = clean(raw, line)
         log.debug("%s: %s (for %g s) -> %d B", type(self).__name__, line, seconds, len(text))
+        self._log_reply(line, text)
         return Result(line, raw, text)
+
+    def _log_reply(self, line: str, text: str) -> None:
+        if output_log.isEnabledFor(logging.DEBUG):
+            entry = output_record(f"{type(self).__name__}: {line}", text, limit=self.log_output_limit)
+            if entry:
+                output_log.debug("%s", entry)
 
     def watch(self, line: str, handler: Callable[[str], bool], timeout: float) -> bool:
         """Run a command that keeps printing and give each line to ``handler`` as it arrives, until the handler
