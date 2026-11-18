@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- DEBUG logging of every action, one line each, never the output: `flipperone.linux` (a command or a file read, its
+  exit code, time and sizes; streams, file copies), `flipperone.cli` (an MCU or probe command, its time and reply size;
+  streams and watches). `flipperone.wire` (the bytes) stays as it was.
+- DEBUG logging of each command's output, as a record after its line, indented, stderr under `err:`:
+  `flipperone.linux.output`, `flipperone.cli.output`; `log_output_limit` of `Linux` and of the CLI devices (64 KiB by
+  default) caps each stream, the rest is counted.
+
 ## [0.1.0] - 2026-11-15
 
 ### Added
