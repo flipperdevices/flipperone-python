@@ -1,7 +1,9 @@
 # Linux on the main board
 
 `Linux(shell, command_timeout_s=20)` over any `Shell`; over SSH: `connect.linux_over_ssh(host, user="user",
-password=None, port=22, jump=None)` (needs `flipperone[ssh]`).
+password=None, port=22, jump=None)` (needs `flipperone[ssh]`); over the CPU's serial console through the Debug Probe,
+without network: `connect.linux_over_probe()` (commands and file reads only, see
+[transport.md](transport.md#a-serial-console)).
 
 | Method | |
 |---|---|

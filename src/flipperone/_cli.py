@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from ._output import DEFAULT_LIMIT
 from ._output import record as output_record
+from ._text import strip_ansi as strip_ansi  # kept importable from here
 from .errors import CliError, CommandNotFound, FlipperOneError, PortNotFound, SyncTimeout, UsageError
 from .transport.base import Stream
 
@@ -27,7 +28,6 @@ CR = b"\r"
 ETX = b"\x03"
 READ_SLICE_S = 0.1
 
-ANSI_CSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _PROMPT_TAIL = re.compile(r"\n?[^\n]*>: $")
 _NOT_FOUND = re.compile(r"could not find command `([^`]*)`")
 
@@ -36,11 +36,6 @@ log = logging.getLogger("flipperone.cli")      # DEBUG: one line per command (th
 output_log = logging.getLogger("flipperone.cli.output")    # DEBUG: each command's reply, after its line
 
 Connect = Callable[[], Stream]
-
-
-def strip_ansi(text: str) -> str:
-    """``text`` without ANSI escape sequences (colours, cursor moves)."""
-    return ANSI_CSI.sub("", text)
 
 
 @dataclass(frozen=True)

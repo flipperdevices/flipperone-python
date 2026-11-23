@@ -1,7 +1,8 @@
 import pytest
 
-from flipperone.probe import Probe, Role
-from flipperone.probe.ports import port
+from flipperone.errors import AmbiguousDevice
+from flipperone.probe import Probe, ProbeId, Role, probes, select
+from flipperone.probe.ports import port, wait_port
 from flipperone.testing import FakeCli
 from flipperone.transport import Port
 
@@ -31,9 +32,35 @@ def test_gpio_and_reset():
         probe.gpio_set("cpu_reset", 2)
 
 
+def probe_ports(serial: str, chip: str) -> list[Port]:
+    return [Port(f"/dev/cu.usbmodem{serial}{n}", f"/dev/cu.usbmodem{serial}{n}", serial, n, 0x37C1, 0xF131,
+                 f"Flipper One Debug Probe {chip}") for n in (2, 4, 6, 8)]
+
+
+ONE = probe_ports("f1_debug_4b30_", "D7DA0C50B04820F2")
+TWO = probe_ports("f1_debug_d950_", "63E7482F2DB3DF2B")
+OLD = probe_ports("flip_one_debug", "D7DA0C50B04820F2")      # firmware before 0.7.0
+
+
 def test_ports_by_role():
-    ports = [Port(f"/dev/cu.usbmodemflip_one_debug{n}", f"/dev/cu.usbmodemflip_one_debug{n}", "flip_one_debug", n,
-                  0x37C1, 0xF131, "Debug Probe") for n in (2, 4, 6, 8)]
-    found = port(Role.PROBE_CLI, ports)
-    assert found is not None and found.interface == 8
+    found = port(Role.PROBE_CLI, ONE)
+    assert found is not None and found.interface == 8 and found.serial == "f1_debug_4b30_"
     assert port(Role.MCU_CLI, []) is None
+    assert port(Role.MCU_CLI, OLD) is None                     # the old serial is not a probe here
+    assert wait_port(Role.MCU_CLI, timeout=0, discover_fn=lambda: ONE) == ONE[1]
+
+
+def test_several_probes_need_a_name():
+    both = ONE + TWO
+    assert probes(both) == [ProbeId("f1_debug_4b30_", "D7DA0C50B04820F2"),
+                            ProbeId("f1_debug_d950_", "63E7482F2DB3DF2B")]
+    with pytest.raises(AmbiguousDevice, match="several Debug Probes"):
+        port(Role.MCU_CLI, both)
+    for name in ("d950", "f1_debug_d950_", "63e7", "63E7482F2DB3DF2B"):
+        assert port(Role.MCU_CLI, both, probe=name) == TWO[1]
+    assert port(Role.MCU_CLI, both, probe="ffff") is None
+    assert select([], None) is None
+    no_chip = [Port("/dev/ttyACM0", "/dev/ttyACM0", "f1_debug_0001_", 2, 0x37C1, 0xF131, None)]
+    assert probes(no_chip) == [ProbeId("f1_debug_0001_", None)]
+    with pytest.raises(AmbiguousDevice, match="matches several"):
+        select([ProbeId("f1_debug_aaaa_", "ABCD000000000000"), ProbeId("f1_debug_bbbb_", "ABCD111111111111")], "abcd")

@@ -21,6 +21,10 @@ class PortNotFound(TransportError):
     """The port or device is not there (not plugged in, or in another mode)."""
 
 
+class AmbiguousDevice(TransportError):
+    """Several devices fit and none was named (several Debug Probes attached)."""
+
+
 class PortBusy(TransportError):
     """Another program holds the port exclusively."""
 

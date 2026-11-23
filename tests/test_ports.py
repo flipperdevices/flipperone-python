@@ -1,3 +1,4 @@
+import re
 from types import SimpleNamespace
 
 from flipperone.transport.ports import (
@@ -120,3 +121,11 @@ def test_wait_for_times_out():
 
     assert wait_for("flip_one_debug", 2, timeout=2.5, poll=1.0, discover_fn=list, sleep=sleep, clock=clock) is None
     assert now[0] == 3.0
+
+
+def test_find_by_pattern():
+    ports = [Port("/dev/ttyACM0", "/dev/ttyACM0", "f1_debug_4b30_", 4, 0x37C1, 0xF131, None),
+             Port("/dev/ttyACM1", "/dev/ttyACM1", None, 4, None, None, None)]
+    assert find(ports, re.compile(r"f1_debug_[0-9a-f]{4}_"), 4) == ports[0]
+    assert find(ports, re.compile(r"f1_debug_"), 4) is None              # the whole serial must match
+    assert find(ports, "f1_debug_4b30_", 4) == ports[0]

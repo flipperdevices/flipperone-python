@@ -16,7 +16,7 @@ from flipperone import connect
 with connect.mcu_over_probe() as mcu:                       # or mcu_over_usb() while Linux is off
     print(mcu.device_info()["rp2350_firmware_version"], mcu.power_info().battery_level)
 
-with connect.linux_over_ssh("10.0.0.1", password="...") as linux:
+with connect.linux_over_ssh("10.0.0.1", password="...") as linux:   # or linux_over_probe(): no network needed
     print(linux.run("uname -r").out)
 ```
 
@@ -36,8 +36,12 @@ it, or the output loggers, on its own (`logging.getLogger("flipperone.wire").set
 - [docs/linux.md](docs/linux.md) — Linux on the main board
 - [docs/probe.md](docs/probe.md) — the Debug Probe
 - [docs/bootloaders.md](docs/bootloaders.md) — the MCU's USB bootloader (`picotool`), MaskROM (`rockusb`)
-- [docs/experimental.md](docs/experimental.md) — what carries no stability promise
+- [docs/experimental.md](docs/experimental.md) — what carries no stability promise: the screen, keys and touch over
+  RPC, the CPU's power through the MCU
+- [docs/agents.md](docs/agents.md) — working with a device from an LLM agent: what the device does, how much each
+  call may change, rules
 - [docs/stability.md](docs/stability.md) — versions and what may change
+- [docs/backlog.md](docs/backlog.md) — what is postponed and why
 - [examples/](examples/) — short scripts
 
 ## Development

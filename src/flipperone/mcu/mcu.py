@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from .._cli import CliDevice
-from ..errors import UnexpectedReply
+from ..errors import CliError, SyncTimeout, UnexpectedReply
 from . import parsers
 from .parsers import HeapStats, KeyEvent, PowerInfo, TouchEvent
 
@@ -19,6 +19,9 @@ LED_ALL_OFF = "LineAllOff"    # takes no colour
 NVM_KINDS = ("i", "u", "b", "s")
 KEYS = ("Key1", "Key2", "Power", "Key4", "Key5", "Back", "Up", "Down", "Right", "Left", "OK", "PTT", "Sw")
 KEY_TYPES = ("Press", "Release", "Short", "Long", "Repeat")
+HOST_APP = "cpu_app_start"          # the MCU app that powers the CPU (Linux) and shows its screen
+MASKROM_APP = "cpu_app_maskrom"     # the same with the CPU held in its boot ROM (MaskROM)
+RPC_CLOSE = b"\x02\x32\x00"         # RpcMessage{rpc_session_close_request {}}, length-delimited
 
 
 class Mcu(CliDevice):
@@ -33,6 +36,17 @@ class Mcu(CliDevice):
     Methods are named after the commands they run (:meth:`power_info` runs ``power info``); any other command goes
     through :meth:`run` (or :meth:`stream` / :meth:`watch` for the ones that keep printing).
     """
+
+    def sync(self, timeout: float | None = None) -> str:
+        """Ctrl-C and wait for the prompt. When none comes, the session may have been left in the RPC protocol (a
+        program stopped inside ``rpc``), where text is read as message lengths: the session is closed in that
+        protocol and Ctrl-C tried once more."""
+        try:
+            return super().sync(timeout)
+        except SyncTimeout:
+            self._write(RPC_CLOSE)
+            self._sleep(0.15)
+            return super().sync(timeout)
 
     def help(self) -> list[str]:
         """The command names the firmware has."""
@@ -114,12 +128,40 @@ class Mcu(CliDevice):
             raise ValueError(f"led {LED_TYPES[index]} needs a colour, one of {LED_COLORS}")
         self._text(f"led {index} {_index(color, LED_COLORS, 'color')}")
 
+    def desktop_run_app(self) -> str | None:
+        """``desktop get_run_app``: the id of the MCU app on screen (one runs at a time), ``None`` on the desktop."""
+        return self._parse("desktop get_run_app", parsers.running_app)
+
+    def desktop_list_apps(self) -> dict[str, str]:
+        """``desktop list_apps``: app id -> name."""
+        return self._parse("desktop list_apps", parsers.listed_apps)
+
+    def desktop_start_app(self, app: str) -> str:
+        """``desktop start_app``: start an app by id or name; returns its id. Refused (unknown, or another app runs):
+        :class:`~flipperone.errors.CliError` with the firmware's reason. :data:`HOST_APP` powers the CPU."""
+        _check_app(app)
+        text = self._text(f"desktop start_app {app}")
+        try:
+            return parsers.started_app(text)
+        except ValueError as e:
+            raise CliError(f"'desktop start_app {app}': {e}") from None
+
+    def desktop_stop_app(self) -> str | None:
+        """``desktop stop_app``: ask the running app to exit; returns its id, ``None`` when none ran. Stopping
+        :data:`HOST_APP` cuts the CPU's power without warning Linux (sync it first)."""
+        return self._parse("desktop stop_app", parsers.stopped_app)
+
     def _parse[T](self, line: str, parser: Callable[[str], T]) -> T:
         text = self._text(line)
         try:
             return parser(text)
         except ValueError as e:
             raise UnexpectedReply(f"'{line}': {e}") from None
+
+
+def _check_app(app: str) -> None:
+    if not app or any(not 0x21 <= ord(c) <= 0x7E for c in app):
+        raise ValueError(f"an app id is one printable word: {app!r}")
 
 
 def _index(value: int | str, names: tuple[str, ...], what: str) -> int:

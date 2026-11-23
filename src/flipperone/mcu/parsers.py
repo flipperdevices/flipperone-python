@@ -10,13 +10,18 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .._cli import strip_ansi
+from .._text import strip_ansi
 
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 _UPTIME = re.compile(r"Uptime: (\d+)h(\d+)m(\d+)s")
 _SARADC_ID = re.compile(r"SARADC ID:\s*(\d+)")
 _KEY_EVENT = re.compile(r"^key: (\S+) type: (\S+)$")
 _TOUCH_EVENT = re.compile(r"^touch: (\S+) x=(-?\d+) y=(-?\d+) p=(-?\d+)$")
+_RUNNING_APP = re.compile(r"^running app: (\S+)$", re.M)
+_LISTED_APP = re.compile(r"^\s*(.+?) \((\S+)\)$")
+_STARTED_APP = re.compile(r"^started .* \((\S+)\)$", re.M)
+_STOPPED_APP = re.compile(r"^stop requested: (.+)$", re.M)
+NO_APP = "no app is running"
 TOUCH_NO_POSITION = 65535
 
 
@@ -170,6 +175,44 @@ def input_event(line: str) -> KeyEvent | TouchEvent | None:
         missing = x == TOUCH_NO_POSITION and y == TOUCH_NO_POSITION
         return TouchEvent(m.group(1), None if missing else x, None if missing else y, int(m.group(4)))
     return None
+
+
+def running_app(text: str) -> str | None:
+    """``desktop get_run_app``: the running app's id, ``None`` on the desktop (desktop_cli.c)."""
+    found = _RUNNING_APP.search(text)
+    if found:
+        return found.group(1)
+    if NO_APP in text:
+        return None
+    raise ValueError(f"no app named in {text!r}")
+
+
+def listed_apps(text: str) -> dict[str, str]:
+    """``desktop list_apps``: app id -> name, in the firmware's order (desktop_cli.c)."""
+    apps: dict[str, str] = {}
+    for line in text.splitlines():
+        found = _LISTED_APP.match(line)
+        if found:
+            apps[found.group(2)] = found.group(1)
+    return apps
+
+
+def started_app(text: str) -> str:
+    """``desktop start_app``: the id of the app started; the firmware's refusal as the error (desktop_cli.c)."""
+    found = _STARTED_APP.search(text)
+    if found:
+        return found.group(1)
+    raise ValueError(text.strip() or "no reply")
+
+
+def stopped_app(text: str) -> str | None:
+    """``desktop stop_app``: the id of the app asked to exit, ``None`` when none ran (desktop_cli.c)."""
+    found = _STOPPED_APP.search(text)
+    if found:
+        return found.group(1).strip()
+    if NO_APP in text:
+        return None
+    raise ValueError(f"unexpected reply {text!r}")
 
 
 def _float(value: str | None) -> float | None:
